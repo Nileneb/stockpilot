@@ -5,6 +5,10 @@ psycopg[binary]
 Pillow
 pytest
 pytest-django
+# Async tasks
+celery
+redis
+PyYAML
 # Vision / ML — install torch from the CPU index for smaller footprint:
 #   pip install --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
 torch
