@@ -7,3 +7,6 @@ ALLOWED_HOSTS = ["*"]
 
 # Faster password hasher for dev/tests
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# Mail goes to stdout in dev so we can see what would be sent
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"

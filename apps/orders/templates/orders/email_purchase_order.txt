@@ -1,0 +1,22 @@
+Subject: Purchase Order {{ order.reference }}
+
+Hello {{ order.supplier.name }},
+
+Please find our purchase order below:
+
+Reference: {{ order.reference }}
+Date:      {{ order.submitted_at|date:"Y-m-d" }}
+Customer:  {{ order.organization.name }}
+
+Items
+-----
+{% for item in order.items.all %}- {{ item.product.sku }} — {{ item.product.name }}: {{ item.quantity }} {{ item.product.unit }}
+{% endfor %}
+{% if order.notes %}Notes:
+{{ order.notes }}
+{% endif %}
+Please confirm receipt of this order.
+
+Thanks,
+{{ order.organization.name }}
+(sent via Stockpilot)

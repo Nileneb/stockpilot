@@ -30,7 +30,12 @@ INSTALLED_APPS = [
     "apps.inventory",
     "apps.vision",
     "apps.forecast",
+    "apps.orders",
 ]
+
+# Email — defaults overridden in dev/prod
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "stockpilot@example.local")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
