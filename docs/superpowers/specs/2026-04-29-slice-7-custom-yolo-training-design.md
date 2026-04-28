@@ -13,7 +13,9 @@ Jeder Tenant kann eigene Training-Datensätze hochladen, Fine-Tuning-Jobs starte
 |---|---|---|
 | Async-Worker | **Celery + Redis** | Training dauert 10–30 min, gehört nicht in einen Request. Redis kommt sowieso in Slice 8. |
 | Training-Compute | **CPU (für jetzt)** | `torch+cpu` ist installiert. CUDA-Torch ist 2 GB Install. GPU-Upgrade-Pfad ist dokumentiert, nicht erzwungen. |
-| Annotation-UX | **ZIP-Upload (YOLO-Format)** | LabelImg/CVAT/Label Studio existieren und können nach YOLO exportieren. In-Browser-Annotator wäre 2–3 Wochen Frontend-Arbeit. |
+| Annotation-UX | **In-Browser-Annotator + AI-Suggestions, ZIP als Admin-Fallback** | SaaS für SMB-Endkunden — externe Tools sind nicht zumutbar. Auto-Suggest reduziert Klick-Aufwand drastisch. |
+| Auto-Suggest (primär) | **YOLO11x via existierendem UltralyticsBackend** | Kennt 80 COCO-Klassen (bottle, cup, bowl, book, …) — deckt einen Großteil typischer Lager-Items mit sinnvollen Labels ab. Kein neuer Stack. |
+| Auto-Suggest (sekundär) | **SAM 2 (sam2_t.pt, "tiny")** | Findet alle Objekte, auch unbekannte. Output Masken → Bbox-Konvertierung. Liefert grau dargestellte "unbenannte" Vorschläge unterhalb der YOLO-Boxes. |
 | Modell-Aktivierung | **Eine aktive YoloModel pro Tenant** (`is_active=True`-Flag) | Linear, kein A/B-Testing. Aktivieren = Flag auf neuem Modell setzen, alte abschalten. |
 | Dataset-Mutation | **Frozen-on-train** | Sobald ein TrainingJob startet, ist das Dataset eingefroren. Neue Bilder → neues Dataset. |
 
@@ -33,7 +35,13 @@ TrainingImage
   - image (ImageField → media/training/<schema>/<dataset_id>/images/)
   - annotations (JSONField)
       list of {class_name: str, x_center: float, y_center: float, width: float, height: float}
-      Coords normalized to [0,1].
+      Coords normalized to [0,1]. These are the user-confirmed final labels.
+  - auto_suggestions (JSONField)
+      Cached AI proposals from YOLO11x + SAM 2:
+      [{label: str | null, confidence: float, source: "yolo"|"sam",
+        x_center, y_center, width, height}]
+  - suggestions_status: pending | running | done | failed
+  - suggestions_error (text, blank)
 
 TrainingJob
   - dataset (FK)
@@ -142,14 +150,36 @@ The `try/except` covers the public schema (no `training` tables) — falls back 
 - `TrainingJobAdmin` — action "Start training" creates+queues; status-coloured chips; show logs in detail view
 - `YoloModelAdmin` — action "Activate" (atomic toggle); show metrics; download .pt
 
-## Endpoints (PUBLIC SHARED — but per-tenant via subdomain)
+## In-Browser-Annotation-UI
+
+`/training/` ist die SaaS-Frontend-Strecke parallel zu `/capture/`:
+
+| Route | Zweck |
+|---|---|
+| `GET /training/` | Dataset-Liste, "New Dataset"-Button |
+| `GET /training/dataset/<id>/` | Dataset-Detail: Bilder-Galerie, Status, "Add Image", "Freeze + Train" |
+| `POST /training/dataset/<id>/images/` | Bild hochladen → erzeugt TrainingImage, kicked Celery-Task `generate_suggestions` |
+| `GET /training/image/<id>/` | **Annotation-Editor** (Canvas-basiert) |
+| `GET /training/image/<id>/suggestions/` | JSON: aktueller Stand `auto_suggestions` (UI-Polling während pending/running) |
+| `POST /training/image/<id>/annotations/` | JSON: User-bestätigte Annotations speichern |
+| `POST /training/dataset/<id>/upload-zip/` | Admin-Fallback: kompletter YOLO-ZIP |
+
+**Annotation-Editor (HTML5 Canvas + Vanilla JS):**
+- Bild als Hintergrund, Canvas overlay
+- Bestehende Annotations: solide farbige Boxes mit Label
+- YOLO-Suggestions: blau gestrichelt, Label angezeigt → Klick "Accept" promoted zu Annotation
+- SAM-Suggestions: grau gestrichelt, kein Label → User muss Label tippen, dann "Accept"
+- Tools: New box (drag), Resize (corner-handles), Move (drag center), Delete (Backspace), Undo/Redo
+- Class-Picker (Dropdown rechts mit existierenden Tenant-Klassen + "Add new")
+- Touch-Support für Mobile (passives Pointer-Events-API)
+- Auto-Save alle 10s + on-Save-Button
+
+## Endpoints (Admin)
 
 ```
 POST /admin/training/dataset/upload-zip/   — multipart, ZIP file + name
 GET  /admin/training/job/<id>/logs/        — streamed log tail (HTML, auto-refresh)
 ```
-
-No DRF API in this slice; admin actions and tenant subdomain routing handle access control.
 
 ## Infrastructure changes
 
@@ -188,21 +218,27 @@ redis
 PyYAML  # for data.yaml parsing
 ```
 
+SAM 2 lädt sich on first use auto via Ultralytics (`from ultralytics import SAM; SAM("sam2_t.pt")`), keine extra dep.
+
 ## Tests
 
 - **Pure-logic** (no Celery, no torch):
-  - `test_create_dataset_from_zip_valid_yolo_structure` — temp ZIP with 3 images + 3 labels → Dataset has 3 TrainingImages
+  - `test_create_dataset_from_zip_valid_yolo_structure`
   - `test_create_dataset_from_zip_rejects_missing_labels`
   - `test_freeze_dataset_idempotent`
-  - `test_activate_model_deactivates_others` — atomic toggle
-- **Service-level** (with mocked Celery via `CELERY_TASK_ALWAYS_EAGER=True`):
+  - `test_activate_model_deactivates_others`
+  - `test_annotation_save_endpoint_validates_normalized_coords`
+  - `test_suggestion_merge_dedupes_overlapping_yolo_and_sam` (IoU-based)
+- **Service-level** (mocked Celery via `CELERY_TASK_ALWAYS_EAGER=True`):
   - `test_start_training_job_freezes_dataset`
-  - `test_start_training_job_dispatches_task` — assert Celery `apply_async` called
-- **Integration** (marked `@pytest.mark.integration` — opt-in):
-  - `test_train_yolo_end_to_end` — synthetic dataset, 1 epoch, asserts a YoloModel is created with valid file
+  - `test_start_training_job_dispatches_task`
+  - `test_generate_suggestions_persists_yolo_results` (with stubbed backend)
+- **Integration** (`@pytest.mark.integration`, opt-in):
+  - `test_train_yolo_end_to_end` — synthetic dataset, 1 epoch
+  - `test_generate_suggestions_with_real_yolo_and_sam` — synthetic image
 - **Inference fallback**:
-  - `test_ultralytics_backend_uses_active_model_when_present` — patches `YoloModel.objects.filter`
-  - `test_ultralytics_backend_falls_back_to_default` — no active model
+  - `test_ultralytics_backend_uses_active_model_when_present` (mock query)
+  - `test_ultralytics_backend_falls_back_to_default`
 
 ## GPU upgrade path (documented, not done)
 
