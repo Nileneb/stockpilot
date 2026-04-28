@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Iterable
 
 from django.db.models import Sum
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.catalog.models import Product
@@ -20,7 +21,16 @@ def _daily_consumption_series(
     product: Product,
     lookback_days: int,
 ) -> list[Decimal]:
-    today = timezone.now().date()
+    """Return [c_{N-1}, c_{N-2}, ..., c_0] — units consumed per day,
+    oldest first. Each entry is the absolute value of net negative deltas
+    from CONSUMPTION movements on that day.
+
+    Uses local-TZ dates throughout: `localdate()` for the window bounds
+    (so they align with Django's `__date` lookup), and `TruncDate` for the
+    GROUP-BY key (so the bucket dates match the lookup dates regardless of
+    the storage timezone).
+    """
+    today = timezone.localdate()
     start = today - timedelta(days=lookback_days - 1)
 
     rows = (
@@ -30,7 +40,7 @@ def _daily_consumption_series(
             created_at__date__gte=start,
             created_at__date__lte=today,
         )
-        .extra(select={"day": "date(created_at)"})
+        .annotate(day=TruncDate("created_at"))
         .values("day")
         .annotate(total=Sum("quantity_delta"))
     )
@@ -39,7 +49,7 @@ def _daily_consumption_series(
     series: list[Decimal] = []
     for i in range(lookback_days):
         day = start + timedelta(days=i)
-        total = by_day.get(day) or by_day.get(day.isoformat()) or Decimal("0")
+        total = by_day.get(day) or Decimal("0")
         consumed = abs(Decimal(total)) if Decimal(total) < 0 else Decimal("0")
         series.append(consumed)
     return series
