@@ -17,6 +17,7 @@
     <nav class="text-sm text-slate-300 space-x-3">
       <a href="{% url 'vision:capture' %}" class="hover:text-white">Capture</a>
       <a href="{% url 'vision:photo_list' %}" class="hover:text-white">Photos</a>
+      <a href="{% url 'training:dataset_list' %}" class="hover:text-white">Training</a>
       <a href="/admin/" class="hover:text-white">Admin</a>
     </nav>
   </header>
@@ -30,7 +31,7 @@
     {% endfor %}
   </ul>
   {% endif %}
-  <main class="px-4 py-6 max-w-xl mx-auto">
+  <main class="px-4 py-6 max-w-3xl mx-auto">
     {% block content %}{% endblock %}
   </main>
   <script>

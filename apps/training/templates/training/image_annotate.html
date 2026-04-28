@@ -1,0 +1,44 @@
+{% extends "training/base.html" %}
+{% load static %}
+{% block page_title %}Annotate image #{{ image.id }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-3">
+  <a href="{% url 'training:dataset_detail' image.dataset_id %}" class="text-xs text-slate-400 hover:text-white">
+    ← {{ image.dataset.name }}
+  </a>
+  <span id="ann-status" class="text-xs text-slate-400"></span>
+</div>
+
+<div id="annotator"
+     class="relative rounded-lg overflow-hidden bg-slate-950 select-none touch-none"
+     data-image-url="{{ image.image.url }}"
+     data-image-id="{{ image.id }}"
+     data-annotations-url="{% url 'training:image_annotations' image.id %}"
+     data-suggestions-url="{% url 'training:image_suggestions' image.id %}"
+     data-csrf="{{ csrf_token }}"
+     data-suggestions-status="{{ image.suggestions_status }}">
+  <canvas id="ann-canvas" class="block w-full"></canvas>
+  <div id="ann-loading" class="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
+    Loading…
+  </div>
+</div>
+
+<div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+  <div class="sm:col-span-2 flex flex-wrap gap-2">
+    <input id="ann-class-input" type="text" placeholder="Class label (e.g. bottle, can, box)"
+           class="flex-1 rounded bg-slate-800 border border-slate-700 px-3 py-2 text-sm">
+    <button id="ann-clear" class="rounded bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 text-sm">
+      Clear all
+    </button>
+    <button id="ann-save" class="rounded bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 text-sm">
+      Save
+    </button>
+  </div>
+  <div class="text-xs text-slate-400 leading-relaxed">
+    Drag to draw new boxes · click suggestion to accept · click box to select · Backspace deletes ·
+    type label and press Enter to relabel selected.
+  </div>
+</div>
+
+<script src="{% static 'training/annotator.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "training/base.html" %}
+{% block page_title %}Training jobs{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Training jobs</h1>
+{% if jobs %}
+<ul class="space-y-2">
+  {% for j in jobs %}
+  <li class="rounded-lg bg-slate-800 p-3">
+    <div class="flex items-center justify-between">
+      <span class="text-sm">Job #{{ j.id }} — {{ j.dataset.name }}</span>
+      <span class="text-xs uppercase tracking-wide rounded px-2 py-0.5
+        {% if j.status == 'completed' %}bg-emerald-900 text-emerald-300
+        {% elif j.status == 'failed' %}bg-rose-900 text-rose-300
+        {% elif j.status == 'running' %}bg-blue-900 text-blue-300 animate-pulse
+        {% else %}bg-slate-900 text-slate-300{% endif %}">
+        {{ j.get_status_display }}
+      </span>
+    </div>
+    <div class="text-xs text-slate-400 mt-1">
+      epochs={{ j.epochs }} · batch={{ j.batch_size }} · imgsz={{ j.image_size }} ·
+      base={{ j.base_model }}{% if j.started_at %} · started {{ j.started_at|date:"H:i" }}{% endif %}
+    </div>
+    {% if j.error %}
+    <pre class="mt-2 text-xs text-rose-300 bg-slate-950 rounded p-2 overflow-auto max-h-32">{{ j.error }}</pre>
+    {% endif %}
+    {% if j.output_model %}
+    <div class="mt-2 text-xs text-slate-300">
+      → produced
+      <a href="{% url 'training:model_list' %}" class="text-blue-400">{{ j.output_model.name }}</a>
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-sm text-slate-400">No training jobs yet.</p>
+{% endif %}
+{% endblock %}
