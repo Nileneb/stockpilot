@@ -1,0 +1,4 @@
+Django>=5.1,<5.2
+django-unfold
+pytest
+pytest-django
