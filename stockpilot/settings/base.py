@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.tenants",
     "apps.catalog",
     "apps.inventory",
+    "apps.vision",
 ]
 
 MIDDLEWARE = [
@@ -82,6 +83,17 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+# Vision / inference
+VISION_INFERENCE_BACKEND = os.environ.get(
+    "VISION_INFERENCE_BACKEND",
+    "apps.vision.inference.UltralyticsBackend",
+)
+VISION_YOLO_MODEL = os.environ.get("VISION_YOLO_MODEL", "yolo11n.pt")
+VISION_YOLO_CONFIDENCE = float(os.environ.get("VISION_YOLO_CONFIDENCE", "0.25"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
