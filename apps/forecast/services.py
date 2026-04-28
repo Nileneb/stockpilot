@@ -11,7 +11,6 @@ from django.utils import timezone
 
 from apps.catalog.models import Product
 from apps.inventory.models import Stock, StockMovement
-from apps.tenants.models import Organization
 
 from . import forecasting
 from .models import ForecastSnapshot
@@ -21,15 +20,11 @@ def _daily_consumption_series(
     product: Product,
     lookback_days: int,
 ) -> list[Decimal]:
-    """Return [c_{N-1}, c_{N-2}, ..., c_0] — units consumed per day,
-    oldest first. Each entry is the absolute value of net negative deltas
-    from CONSUMPTION movements on that day."""
     today = timezone.now().date()
     start = today - timedelta(days=lookback_days - 1)
 
     rows = (
-        StockMovement.all_objects.filter(
-            organization=product.organization,
+        StockMovement.objects.filter(
             product=product,
             kind=StockMovement.Kind.CONSUMPTION,
             created_at__date__gte=start,
@@ -44,7 +39,6 @@ def _daily_consumption_series(
     series: list[Decimal] = []
     for i in range(lookback_days):
         day = start + timedelta(days=i)
-        # Match either date object or stringified date (SQLite extra returns str)
         total = by_day.get(day) or by_day.get(day.isoformat()) or Decimal("0")
         consumed = abs(Decimal(total)) if Decimal(total) < 0 else Decimal("0")
         series.append(consumed)
@@ -62,9 +56,7 @@ def compute_forecast(
     rate = forecasting.simple_exponential_smoothing(series, alpha=alpha)
 
     try:
-        stock = Stock.all_objects.get(
-            organization=product.organization, product=product
-        )
+        stock = Stock.objects.get(product=product)
         current_stock = stock.quantity_on_hand
     except Stock.DoesNotExist:
         current_stock = Decimal("0")
@@ -84,7 +76,6 @@ def compute_forecast(
     )
 
     return ForecastSnapshot.objects.create(
-        organization=product.organization,
         product=product,
         lookback_days=lookback_days,
         method="exp_smoothing",
@@ -98,33 +89,27 @@ def compute_forecast(
     )
 
 
-def compute_all_forecasts(
-    organization: Organization,
-    **kwargs,
-) -> list[ForecastSnapshot]:
+def compute_all_forecasts(**kwargs) -> list[ForecastSnapshot]:
+    """Compute one snapshot per active Product in the current tenant schema."""
     snapshots: list[ForecastSnapshot] = []
-    for product in Product.all_objects.filter(
-        organization=organization, is_active=True
-    ):
+    for product in Product.objects.filter(is_active=True):
         snapshots.append(compute_forecast(product, **kwargs))
     return snapshots
 
 
-def products_needing_reorder(organization: Organization) -> Iterable[Product]:
+def products_needing_reorder() -> Iterable[Product]:
     """Products whose current stock is at or below their reorder_point."""
     return [
         p
-        for p in Product.all_objects.filter(
-            organization=organization, is_active=True
-        ).select_related("default_supplier")
+        for p in Product.objects.filter(is_active=True).select_related(
+            "default_supplier"
+        )
         if _current_stock(p) <= Decimal(p.reorder_point)
     ]
 
 
 def _current_stock(product: Product) -> Decimal:
     try:
-        return Stock.all_objects.get(
-            organization=product.organization, product=product
-        ).quantity_on_hand
+        return Stock.objects.get(product=product).quantity_on_hand
     except Stock.DoesNotExist:
         return Decimal("0")

@@ -9,21 +9,19 @@ from .services import compute_forecast
 class ForecastSnapshotAdmin(ModelAdmin):
     list_display = (
         "product",
-        "organization",
         "daily_consumption_rate",
         "current_stock",
         "days_until_stockout",
         "suggested_reorder_quantity",
         "created_at",
     )
-    list_filter = ("organization", "method")
+    list_filter = ("method",)
     search_fields = ("product__sku", "product__name")
-    autocomplete_fields = ("organization", "product")
+    autocomplete_fields = ("product",)
     readonly_fields = ("created_at",)
 
 
 def register_product_action():
-    """Register a 'Compute forecast' admin action on ProductAdmin from catalog."""
     from apps.catalog.admin import ProductAdmin
 
     @admin.action(description="Compute forecast")

@@ -1,5 +1,7 @@
 Django>=5.1,<5.2
 django-unfold
+django-tenants
+psycopg[binary]
 Pillow
 pytest
 pytest-django

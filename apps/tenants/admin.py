@@ -1,15 +1,23 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
-from .models import Membership, Organization
+from .models import Domain, Membership, Organization
 
 
 @admin.register(Organization)
 class OrganizationAdmin(ModelAdmin):
-    list_display = ("name", "slug", "is_active", "created_at")
+    list_display = ("name", "slug", "schema_name", "is_active", "created_at")
     list_filter = ("is_active",)
-    search_fields = ("name", "slug")
+    search_fields = ("name", "slug", "schema_name")
     prepopulated_fields = {"slug": ("name",)}
+
+
+@admin.register(Domain)
+class DomainAdmin(ModelAdmin):
+    list_display = ("domain", "tenant", "is_primary")
+    list_filter = ("is_primary",)
+    search_fields = ("domain",)
+    autocomplete_fields = ("tenant",)
 
 
 @admin.register(Membership)

@@ -17,31 +17,22 @@ class PurchaseOrderItemInline(admin.TabularInline):
 class PurchaseOrderAdmin(ModelAdmin):
     list_display = (
         "reference",
-        "organization",
         "supplier",
         "status",
         "created_at",
         "submitted_at",
         "received_at",
     )
-    list_filter = ("status", "organization", "supplier")
+    list_filter = ("status", "supplier")
     search_fields = ("reference", "supplier__name", "notes")
-    autocomplete_fields = ("organization", "supplier", "created_by")
+    autocomplete_fields = ("supplier", "created_by")
     readonly_fields = ("reference", "created_at", "submitted_at", "received_at")
     inlines = (PurchaseOrderItemInline,)
     actions = ("action_generate_drafts", "action_submit", "action_mark_received")
 
-    @admin.action(description="Generate draft orders for active organization")
+    @admin.action(description="Generate draft orders for this tenant")
     def action_generate_drafts(self, request, queryset):
-        org = getattr(request, "organization", None)
-        if org is None:
-            self.message_user(
-                request,
-                "No active organization on the request",
-                level=messages.ERROR,
-            )
-            return
-        report = generate_draft_orders(org, created_by=request.user)
+        report = generate_draft_orders(created_by=request.user)
         msg = f"Created {len(report.created)} draft order(s)"
         if report.skipped_no_supplier:
             msg += (
@@ -93,13 +84,6 @@ class PurchaseOrderAdmin(ModelAdmin):
 
 @admin.register(PurchaseOrderItem)
 class PurchaseOrderItemAdmin(ModelAdmin):
-    list_display = (
-        "order",
-        "product",
-        "quantity",
-        "received_quantity",
-        "organization",
-    )
-    list_filter = ("organization",)
+    list_display = ("order", "product", "quantity", "received_quantity")
     search_fields = ("product__sku", "product__name", "order__reference")
-    autocomplete_fields = ("organization", "order", "product")
+    autocomplete_fields = ("order", "product")

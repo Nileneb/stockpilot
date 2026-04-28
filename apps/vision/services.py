@@ -18,20 +18,17 @@ def run_inference(photo: InventoryPhoto) -> int:
 
     Returns the number of detections created. Idempotent: re-running clears
     previous detections for the photo first.
-
-    Inference happens outside the persistence transaction so that failures
-    can be recorded (status=failed) without being rolled back.
     """
     with transaction.atomic():
         photo.status = InventoryPhoto.Status.PROCESSING
         photo.error = ""
         photo.save(update_fields=["status", "error"])
-        Detection.all_objects.filter(photo=photo).delete()
+        Detection.objects.filter(photo=photo).delete()
 
     try:
         backend = get_backend()
         results = backend.detect(photo.image.path)
-    except Exception as exc:  # noqa: BLE001 — backend errors are surfaced to admin
+    except Exception as exc:  # noqa: BLE001
         photo.status = InventoryPhoto.Status.FAILED
         photo.error = f"{type(exc).__name__}: {exc}"
         photo.save(update_fields=["status", "error"])
@@ -40,7 +37,6 @@ def run_inference(photo: InventoryPhoto) -> int:
     with transaction.atomic():
         rows = [
             Detection(
-                organization=photo.organization,
                 photo=photo,
                 label=r.label,
                 confidence=Decimal(str(r.confidence)),
@@ -66,9 +62,6 @@ def apply_to_stock(photo: InventoryPhoto, performed_by=None) -> dict[str, dict]:
 
     Returns a report keyed by label:
         {label: {"count": N, "matched": True|False, "movement_id": id_or_None}}
-
-    Detections without a ProductLabel mapping are reported as "matched=False"
-    and skipped — no stock change.
     """
     if photo.status not in (
         InventoryPhoto.Status.PROCESSED,
@@ -79,13 +72,10 @@ def apply_to_stock(photo: InventoryPhoto, performed_by=None) -> dict[str, dict]:
         )
 
     counts: dict[str, int] = {}
-    for det in Detection.all_objects.filter(photo=photo):
+    for det in Detection.objects.filter(photo=photo):
         counts[det.label] = counts.get(det.label, 0) + 1
 
-    mappings = {
-        pl.label: pl
-        for pl in ProductLabel.all_objects.filter(organization=photo.organization)
-    }
+    mappings = {pl.label: pl for pl in ProductLabel.objects.all()}
 
     report: dict[str, dict] = {}
     for label, count in counts.items():

@@ -9,14 +9,13 @@ from .services import apply_to_stock, run_inference
 class InventoryPhotoAdmin(ModelAdmin):
     list_display = (
         "id",
-        "organization",
         "uploaded_by",
         "status",
         "created_at",
         "processed_at",
         "applied_at",
     )
-    list_filter = ("status", "organization")
+    list_filter = ("status",)
     search_fields = ("uploaded_by__username",)
     readonly_fields = (
         "status",
@@ -25,7 +24,7 @@ class InventoryPhotoAdmin(ModelAdmin):
         "processed_at",
         "applied_at",
     )
-    autocomplete_fields = ("organization", "uploaded_by")
+    autocomplete_fields = ("uploaded_by",)
     actions = ("action_run_inference", "action_apply_to_stock")
 
     def save_model(self, request, obj, form, change):
@@ -77,16 +76,15 @@ class InventoryPhotoAdmin(ModelAdmin):
 
 @admin.register(Detection)
 class DetectionAdmin(ModelAdmin):
-    list_display = ("photo", "organization", "label", "confidence", "created_at")
-    list_filter = ("label", "organization")
+    list_display = ("photo", "label", "confidence", "created_at")
+    list_filter = ("label",)
     search_fields = ("label",)
-    autocomplete_fields = ("organization", "photo")
+    autocomplete_fields = ("photo",)
     readonly_fields = ("created_at",)
 
 
 @admin.register(ProductLabel)
 class ProductLabelAdmin(ModelAdmin):
-    list_display = ("label", "organization", "product", "multiplier")
-    list_filter = ("organization",)
+    list_display = ("label", "product", "multiplier")
     search_fields = ("label", "product__sku", "product__name")
-    autocomplete_fields = ("organization", "product")
+    autocomplete_fields = ("product",)

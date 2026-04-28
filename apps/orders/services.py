@@ -1,4 +1,4 @@
-"""Order lifecycle services."""
+"""Order lifecycle services. Tenant-scoped via the schema; no org argument."""
 
 from __future__ import annotations
 
@@ -7,14 +7,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.core.mail import send_mail
-from django.db import transaction
+from django.db import connection, transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
 from apps.catalog.models import Product
 from apps.forecast.models import ForecastSnapshot
 from apps.inventory.models import Stock, StockMovement
-from apps.tenants.models import Organization
 
 from .models import PurchaseOrder, PurchaseOrderItem
 
@@ -26,10 +25,8 @@ class DraftReport:
 
 
 def _suggested_quantity(product: Product) -> Decimal:
-    """Use latest ForecastSnapshot.suggested_reorder_quantity if available,
-    else product.reorder_quantity."""
     snap = (
-        ForecastSnapshot.all_objects.filter(product=product)
+        ForecastSnapshot.objects.filter(product=product)
         .order_by("-created_at")
         .first()
     )
@@ -40,30 +37,19 @@ def _suggested_quantity(product: Product) -> Decimal:
 
 def _current_stock(product: Product) -> Decimal:
     try:
-        return Stock.all_objects.get(
-            organization=product.organization, product=product
-        ).quantity_on_hand
+        return Stock.objects.get(product=product).quantity_on_hand
     except Stock.DoesNotExist:
         return Decimal("0")
 
 
 @transaction.atomic
-def generate_draft_orders(
-    organization: Organization,
-    *,
-    created_by=None,
-) -> DraftReport:
-    """Group products needing reorder by supplier, create one draft PO per supplier.
-
-    Skips products without `default_supplier` (returned in the report).
-    Skips suppliers that already have an open draft for the same set of products
-    (no duplicate work — caller can edit the existing draft instead).
-    """
+def generate_draft_orders(*, created_by=None) -> DraftReport:
+    """Group products needing reorder by supplier, create one draft PO per supplier."""
     needing = [
         p
-        for p in Product.all_objects.filter(
-            organization=organization, is_active=True
-        ).select_related("default_supplier")
+        for p in Product.objects.filter(is_active=True).select_related(
+            "default_supplier"
+        )
         if _current_stock(p) <= Decimal(p.reorder_point)
     ]
 
@@ -77,8 +63,7 @@ def generate_draft_orders(
 
     created: list[PurchaseOrder] = []
     for supplier, products in by_supplier.items():
-        existing_draft = PurchaseOrder.all_objects.filter(
-            organization=organization,
+        existing_draft = PurchaseOrder.objects.filter(
             supplier=supplier,
             status=PurchaseOrder.Status.DRAFT,
         ).first()
@@ -86,13 +71,11 @@ def generate_draft_orders(
             continue
 
         po = PurchaseOrder.objects.create(
-            organization=organization,
             supplier=supplier,
             created_by=created_by,
         )
         items = [
             PurchaseOrderItem(
-                organization=organization,
                 order=po,
                 product=p,
                 quantity=_suggested_quantity(p),
@@ -108,23 +91,20 @@ def generate_draft_orders(
 def submit_order(order: PurchaseOrder) -> int:
     """Send the order to the supplier via email and mark it submitted.
 
-    Returns the number of emails actually sent (0 or 1). Raises ValueError
-    if the order is not in draft status.
+    Returns the number of emails sent (0 or 1).
     """
     if order.status != PurchaseOrder.Status.DRAFT:
         raise ValueError(
             f"Cannot submit order in status={order.status}; must be draft"
         )
 
-    # Set submitted_at first so the template can render the date
     order.submitted_at = timezone.now()
     order.save(update_fields=["submitted_at"])
 
     body = render_to_string(
         "orders/email_purchase_order.txt",
-        {"order": order},
+        {"order": order, "tenant_schema": connection.schema_name},
     )
-    # Convention: first line is "Subject: ...", rest is body
     lines = body.splitlines()
     subject = lines[0].removeprefix("Subject:").strip()
     message = "\n".join(lines[1:]).lstrip()
@@ -135,7 +115,7 @@ def submit_order(order: PurchaseOrder) -> int:
         sent = send_mail(
             subject=subject,
             message=message,
-            from_email=None,  # uses DEFAULT_FROM_EMAIL
+            from_email=None,
             recipient_list=[recipient],
             fail_silently=False,
         )
@@ -152,11 +132,6 @@ def mark_received(
     quantity_overrides: dict | None = None,
     performed_by=None,
 ) -> list[StockMovement]:
-    """Book all line items into stock and mark the order received.
-
-    `quantity_overrides`: {item_id: Decimal} — for partial deliveries; missing
-    items default to the full ordered quantity.
-    """
     if order.status not in (
         PurchaseOrder.Status.SUBMITTED,
         PurchaseOrder.Status.CONFIRMED,

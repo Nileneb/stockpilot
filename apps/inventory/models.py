@@ -7,10 +7,9 @@ from django.db import models, transaction
 from django.utils import timezone
 
 from apps.catalog.models import Product
-from apps.tenants.managers import OrgScopedModel
 
 
-class Stock(OrgScopedModel):
+class Stock(models.Model):
     product = models.OneToOneField(
         Product,
         on_delete=models.CASCADE,
@@ -25,12 +24,6 @@ class Stock(OrgScopedModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=("organization", "product"),
-                name="unique_stock_per_product",
-            )
-        ]
         ordering = ("product__name",)
 
     def __str__(self) -> str:
@@ -48,13 +41,8 @@ class Stock(OrgScopedModel):
         note: str = "",
         is_count: bool = False,
     ) -> "StockMovement":
-        """Atomically apply a quantity delta and append a StockMovement.
-
-        Use `is_count=True` when delta represents a fresh inventory count
-        (sets last_counted_at). Otherwise delta is a relative change.
-        """
-        stock, _ = cls.all_objects.select_for_update().get_or_create(
-            organization=product.organization,
+        """Atomically apply a quantity delta and append a StockMovement."""
+        stock, _ = cls.objects.select_for_update().get_or_create(
             product=product,
             defaults={"quantity_on_hand": Decimal("0")},
         )
@@ -64,7 +52,6 @@ class Stock(OrgScopedModel):
         stock.save()
 
         return StockMovement.objects.create(
-            organization=product.organization,
             product=product,
             quantity_delta=Decimal(delta),
             kind=kind,
@@ -73,7 +60,7 @@ class Stock(OrgScopedModel):
         )
 
 
-class StockMovement(OrgScopedModel):
+class StockMovement(models.Model):
     class Kind(models.TextChoices):
         COUNT_CORRECTION = "count_correction", "Count correction"
         MANUAL_IN = "manual_in", "Manual in"
@@ -102,7 +89,7 @@ class StockMovement(OrgScopedModel):
     class Meta:
         ordering = ("-created_at",)
         indexes = [
-            models.Index(fields=("organization", "product", "-created_at")),
+            models.Index(fields=("product", "-created_at")),
         ]
 
     def __str__(self) -> str:

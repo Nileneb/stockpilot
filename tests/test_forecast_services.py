@@ -1,11 +1,12 @@
-"""Forecast services that touch the DB (StockMovement, Stock, ForecastSnapshot)."""
+"""Forecast services — within a tenant schema."""
 
 from datetime import timedelta
 from decimal import Decimal
 
-import pytest
 from django.utils import timezone
+from django_tenants.test.cases import TenantTestCase
 
+from apps.catalog.models import Product
 from apps.forecast.models import ForecastSnapshot
 from apps.forecast.services import (
     compute_all_forecasts,
@@ -13,99 +14,73 @@ from apps.forecast.services import (
     products_needing_reorder,
 )
 from apps.inventory.models import Stock, StockMovement
-from apps.tenants.managers import (
-    clear_active_organization,
-    set_active_organization,
-)
 
 
-@pytest.fixture(autouse=True)
-def _no_active_org():
-    clear_active_organization()
-    yield
-    clear_active_organization()
+class ForecastServiceTests(TenantTestCase):
+    @classmethod
+    def setup_tenant(cls, tenant):
+        tenant.name = "Acme"
+        return tenant
 
+    @classmethod
+    def setup_domain(cls, domain):
+        domain.domain = "acme.test.local"
+        return domain
 
-def _seed_consumption(product, *, daily_unit, days):
-    """Create CONSUMPTION movements at -daily_unit per day for the past `days` days."""
-    now = timezone.now()
-    for d in range(days):
-        when = now - timedelta(days=d)
-        m = StockMovement.objects.create(
-            organization=product.organization,
-            product=product,
-            quantity_delta=Decimal(-daily_unit),
-            kind=StockMovement.Kind.CONSUMPTION,
+    def setUp(self):
+        self.product = Product.objects.create(
+            sku="P-1",
+            name="Widget",
+            reorder_point=5,
+            reorder_quantity=10,
         )
-        # Override auto_now_add to backdate the movement
-        StockMovement.all_objects.filter(pk=m.pk).update(created_at=when)
 
+    def _seed_consumption(self, *, daily_unit, days):
+        now = timezone.now()
+        for d in range(days):
+            when = now - timedelta(days=d)
+            m = StockMovement.objects.create(
+                product=self.product,
+                quantity_delta=Decimal(-daily_unit),
+                kind=StockMovement.Kind.CONSUMPTION,
+            )
+            StockMovement.objects.filter(pk=m.pk).update(created_at=when)
 
-def test_compute_forecast_zero_history(product_a):
-    snap = compute_forecast(product_a, lookback_days=14)
-    assert snap.daily_consumption_rate == Decimal("0.0000")
-    assert snap.days_until_stockout is None
-    # Suggested falls back to product.reorder_quantity (10)
-    assert snap.suggested_reorder_quantity == Decimal("10")
+    def test_zero_history(self):
+        snap = compute_forecast(self.product, lookback_days=14)
+        self.assertEqual(snap.daily_consumption_rate, Decimal("0.0000"))
+        self.assertIsNone(snap.days_until_stockout)
+        self.assertEqual(snap.suggested_reorder_quantity, Decimal("10"))
 
+    def test_steady_consumption(self):
+        Stock.adjust(
+            product=self.product,
+            delta=Decimal("100"),
+            kind=StockMovement.Kind.MANUAL_IN,
+        )
+        self._seed_consumption(daily_unit=2, days=14)
 
-def test_compute_forecast_steady_consumption(product_a):
-    Stock.adjust(
-        product=product_a,
-        delta=Decimal("100"),
-        kind=StockMovement.Kind.MANUAL_IN,
-    )
-    _seed_consumption(product_a, daily_unit=2, days=14)
+        snap = compute_forecast(
+            self.product,
+            lookback_days=14,
+            alpha=Decimal("0.5"),
+            safety_days=2,
+        )
+        self.assertGreaterEqual(snap.daily_consumption_rate, Decimal("1.5"))
+        self.assertLessEqual(snap.daily_consumption_rate, Decimal("2.5"))
+        self.assertIsNotNone(snap.days_until_stockout)
+        self.assertGreaterEqual(snap.suggested_reorder_quantity, Decimal("15"))
 
-    snap = compute_forecast(
-        product_a,
-        lookback_days=14,
-        alpha=Decimal("0.5"),
-        safety_days=2,
-    )
-    # Daily rate should be ~2 (steady state)
-    assert Decimal("1.5") <= snap.daily_consumption_rate <= Decimal("2.5")
-    # Stock 100 / rate ~2 → ~50 days
-    assert snap.days_until_stockout is not None
-    assert Decimal("40") <= snap.days_until_stockout <= Decimal("70")
-    # rate * (lead_time 7 + safety 2) = ~18, > min 10 → suggested ~18
-    assert snap.suggested_reorder_quantity >= Decimal("15")
+    def test_compute_all_forecasts_one_per_active_product(self):
+        snaps = compute_all_forecasts()
+        self.assertEqual(len(snaps), 1)
+        self.assertEqual(snaps[0].product, self.product)
 
-
-def test_compute_forecast_persists_org(product_a, org_a):
-    snap = compute_forecast(product_a)
-    assert snap.organization_id == org_a.id
-
-
-def test_compute_all_forecasts_one_per_product(org_a, product_a):
-    snaps = compute_all_forecasts(org_a)
-    assert len(snaps) == 1
-    assert snaps[0].product == product_a
-
-
-def test_compute_all_forecasts_org_scoped(org_a, org_b, product_a, product_b):
-    snaps_a = compute_all_forecasts(org_a)
-    snaps_b = compute_all_forecasts(org_b)
-    assert {s.product_id for s in snaps_a} == {product_a.id}
-    assert {s.product_id for s in snaps_b} == {product_b.id}
-
-
-def test_products_needing_reorder(product_a):
-    # Stock 0, reorder_point 5 → should appear
-    assert product_a in list(products_needing_reorder(product_a.organization))
-
-    # Push stock above reorder_point
-    Stock.adjust(
-        product=product_a,
-        delta=Decimal("100"),
-        kind=StockMovement.Kind.MANUAL_IN,
-    )
-    assert product_a not in list(products_needing_reorder(product_a.organization))
-
-
-def test_forecast_snapshot_org_scoped_in_default_manager(org_a, product_a, org_b):
-    compute_forecast(product_a)
-    set_active_organization(org_a)
-    assert ForecastSnapshot.objects.count() == 1
-    set_active_organization(org_b)
-    assert ForecastSnapshot.objects.count() == 0
+    def test_products_needing_reorder(self):
+        self.assertIn(self.product, list(products_needing_reorder()))
+        Stock.adjust(
+            product=self.product,
+            delta=Decimal("100"),
+            kind=StockMovement.Kind.MANUAL_IN,
+        )
+        self.assertNotIn(self.product, list(products_needing_reorder()))

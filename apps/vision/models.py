@@ -6,14 +6,17 @@ from django.conf import settings
 from django.db import models
 
 from apps.catalog.models import Product
-from apps.tenants.managers import OrgScopedModel
 
 
 def _photo_upload_path(instance: "InventoryPhoto", filename: str) -> str:
-    return f"photos/{instance.organization_id}/{filename}"
+    # Schema-isolated tenants don't share the file system. Path includes the
+    # current schema for clarity even though django-tenants handles isolation.
+    from django.db import connection
+    schema = getattr(connection, "schema_name", "public")
+    return f"photos/{schema}/{filename}"
 
 
-class InventoryPhoto(OrgScopedModel):
+class InventoryPhoto(models.Model):
     class Status(models.TextChoices):
         UPLOADED = "uploaded", "Uploaded"
         PROCESSING = "processing", "Processing"
@@ -46,7 +49,7 @@ class InventoryPhoto(OrgScopedModel):
         return f"Photo {self.pk} ({self.status})"
 
 
-class Detection(OrgScopedModel):
+class Detection(models.Model):
     photo = models.ForeignKey(
         InventoryPhoto,
         on_delete=models.CASCADE,
@@ -62,19 +65,16 @@ class Detection(OrgScopedModel):
 
     class Meta:
         ordering = ("-confidence",)
-        indexes = [models.Index(fields=("organization", "photo", "label"))]
+        indexes = [models.Index(fields=("photo", "label"))]
 
     def __str__(self) -> str:
         return f"{self.label} ({self.confidence})"
 
 
-class ProductLabel(OrgScopedModel):
-    """Maps a YOLO class label to a Product within an organization.
+class ProductLabel(models.Model):
+    """Maps a YOLO class label to a Product. Per-tenant via schema isolation."""
 
-    `multiplier` lets one detection represent N stock units (e.g. a six-pack).
-    """
-
-    label = models.CharField(max_length=64)
+    label = models.CharField(max_length=64, unique=True)
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
@@ -88,12 +88,6 @@ class ProductLabel(OrgScopedModel):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=("organization", "label"),
-                name="unique_label_per_org",
-            )
-        ]
         ordering = ("label",)
 
     def __str__(self) -> str:
