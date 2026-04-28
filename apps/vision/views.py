@@ -1,4 +1,4 @@
-"""Mobile capture views for Slice 5."""
+"""Mobile capture views (tenant-scoped via TenantMainMiddleware + schema)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from collections import Counter
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import (
-    Http404,
     HttpRequest,
     HttpResponse,
     HttpResponseBadRequest,
@@ -22,23 +21,14 @@ from .models import Detection, InventoryPhoto, ProductLabel
 from .services import apply_to_stock, run_inference
 
 
-def _require_org(request: HttpRequest):
-    org = getattr(request, "organization", None)
-    if org is None:
-        raise Http404("No active organization for this user")
-    return org
-
-
 @login_required
 @require_http_methods(["GET", "POST"])
 def capture(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
-        org = _require_org(request)
         image = request.FILES.get("image")
         if image is None:
             return HttpResponseBadRequest("Missing image upload")
-        photo = InventoryPhoto.all_objects.create(
-            organization=org,
+        photo = InventoryPhoto.objects.create(
             uploaded_by=request.user,
             image=image,
         )
@@ -54,24 +44,17 @@ def capture(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_safe
 def photo_list(request: HttpRequest) -> HttpResponse:
-    org = _require_org(request)
-    photos = InventoryPhoto.all_objects.filter(organization=org).order_by("-created_at")[:50]
+    photos = InventoryPhoto.objects.order_by("-created_at")[:50]
     return render(request, "vision/photo_list.html", {"photos": photos})
 
 
 @login_required
 @require_safe
 def photo_detail(request: HttpRequest, photo_id: int) -> HttpResponse:
-    org = _require_org(request)
-    photo = get_object_or_404(
-        InventoryPhoto.all_objects, pk=photo_id, organization=org
-    )
-    detections = Detection.all_objects.filter(photo=photo).order_by("label")
+    photo = get_object_or_404(InventoryPhoto, pk=photo_id)
+    detections = Detection.objects.filter(photo=photo).order_by("label")
     counts = Counter(d.label for d in detections)
-    mappings = {
-        pl.label: pl
-        for pl in ProductLabel.all_objects.filter(organization=org)
-    }
+    mappings = {pl.label: pl for pl in ProductLabel.objects.all()}
     rows = [
         {
             "label": label,
@@ -94,10 +77,7 @@ def photo_detail(request: HttpRequest, photo_id: int) -> HttpResponse:
 @login_required
 @require_http_methods(["POST"])
 def photo_apply(request: HttpRequest, photo_id: int) -> HttpResponse:
-    org = _require_org(request)
-    photo = get_object_or_404(
-        InventoryPhoto.all_objects, pk=photo_id, organization=org
-    )
+    photo = get_object_or_404(InventoryPhoto, pk=photo_id)
     try:
         report = apply_to_stock(photo, performed_by=request.user)
     except ValueError as exc:

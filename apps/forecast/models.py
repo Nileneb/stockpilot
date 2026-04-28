@@ -3,10 +3,9 @@ from decimal import Decimal
 from django.db import models
 
 from apps.catalog.models import Product
-from apps.tenants.managers import OrgScopedModel
 
 
-class ForecastSnapshot(OrgScopedModel):
+class ForecastSnapshot(models.Model):
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
@@ -25,7 +24,6 @@ class ForecastSnapshot(OrgScopedModel):
         decimal_places=2,
         null=True,
         blank=True,
-        help_text="NULL when consumption rate is 0.",
     )
     suggested_reorder_quantity = models.DecimalField(
         max_digits=14,
@@ -42,7 +40,7 @@ class ForecastSnapshot(OrgScopedModel):
     class Meta:
         ordering = ("-created_at",)
         indexes = [
-            models.Index(fields=("organization", "product", "-created_at")),
+            models.Index(fields=("product", "-created_at")),
         ]
 
     def __str__(self) -> str:

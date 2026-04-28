@@ -1,73 +1,33 @@
-"""Middleware that resolves the active Organization for the request.
+"""MembershipAccessMiddleware — enforces that a logged-in user accessing a
+tenant subdomain has a Membership in that Organization.
 
-Resolution order:
-1. `?org=<id>` query param (admin org-switcher writes the chosen org into the session,
-   then redirects without the param).
-2. `request.session['active_org_id']`.
-3. First Membership of the authenticated user (lexicographic).
-4. None (anonymous request, login screens, etc.).
-
-The resolved org is attached as `request.organization` and also pushed into
-thread-local state so that `OrgScopedManager` filters automatically.
+Runs after AuthenticationMiddleware (so request.user is populated) and after
+TenantMainMiddleware (so request.tenant is set). Skips:
+- Anonymous users (let them through to /admin/login/)
+- Public schema (no tenant restriction applies)
+- Superusers (cross-tenant support access)
 """
 
 from __future__ import annotations
 
+from django.http import HttpResponseForbidden
 from django.utils.deprecation import MiddlewareMixin
 
-from .managers import clear_active_organization, set_active_organization
-from .models import Membership, Organization
-
-SESSION_KEY = "active_org_id"
+from .models import Membership
 
 
-def _resolve_for_user(request) -> Organization | None:
-    user = getattr(request, "user", None)
-    if not user or not user.is_authenticated:
-        return None
-
-    requested_id = request.GET.get("org") or request.session.get(SESSION_KEY)
-    if requested_id:
-        try:
-            org = Organization.objects.get(pk=requested_id, is_active=True)
-        except (Organization.DoesNotExist, ValueError, TypeError):
-            org = None
-        else:
-            if user.is_superuser or Membership.objects.filter(
-                user=user, organization=org
-            ).exists():
-                request.session[SESSION_KEY] = org.pk
-                return org
-
-    membership = (
-        Membership.objects.select_related("organization")
-        .filter(user=user, organization__is_active=True)
-        .order_by("organization__name")
-        .first()
-    )
-    if membership:
-        request.session[SESSION_KEY] = membership.organization.pk
-        return membership.organization
-
-    if user.is_superuser:
-        return Organization.objects.filter(is_active=True).order_by("name").first()
-
-    return None
-
-
-class ActiveOrganizationMiddleware(MiddlewareMixin):
+class MembershipAccessMiddleware(MiddlewareMixin):
     def process_request(self, request):
-        org = _resolve_for_user(request)
-        request.organization = org
-        if org is not None:
-            set_active_organization(org)
-        else:
-            clear_active_organization()
-
-    def process_response(self, request, response):
-        clear_active_organization()
-        return response
-
-    def process_exception(self, request, exception):
-        clear_active_organization()
+        tenant = getattr(request, "tenant", None)
+        if tenant is None or tenant.schema_name == "public":
+            return None
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return None
+        if user.is_superuser:
+            return None
+        if not Membership.objects.filter(user=user, organization=tenant).exists():
+            return HttpResponseForbidden(
+                "You are not a member of this organization."
+            )
         return None

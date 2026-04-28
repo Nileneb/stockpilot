@@ -1,10 +1,8 @@
 from django.db import models
 
-from apps.tenants.managers import OrgScopedModel
 
-
-class Supplier(OrgScopedModel):
-    name = models.CharField(max_length=140)
+class Supplier(models.Model):
+    name = models.CharField(max_length=140, unique=True)
     contact_email = models.EmailField(blank=True)
     contact_phone = models.CharField(max_length=40, blank=True)
     lead_time_days = models.PositiveIntegerField(
@@ -17,26 +15,20 @@ class Supplier(OrgScopedModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=("organization", "name"),
-                name="unique_supplier_name_per_org",
-            )
-        ]
         ordering = ("name",)
 
     def __str__(self) -> str:
         return self.name
 
 
-class Product(OrgScopedModel):
+class Product(models.Model):
     class Unit(models.TextChoices):
         PIECE = "piece", "Piece"
         KG = "kg", "Kilogram"
         L = "l", "Liter"
         PACK = "pack", "Pack"
 
-    sku = models.CharField(max_length=64)
+    sku = models.CharField(max_length=64, unique=True)
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
     unit = models.CharField(max_length=8, choices=Unit.choices, default=Unit.PIECE)
@@ -60,12 +52,6 @@ class Product(OrgScopedModel):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=("organization", "sku"),
-                name="unique_sku_per_org",
-            )
-        ]
         ordering = ("name",)
 
     def __str__(self) -> str:

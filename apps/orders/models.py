@@ -7,14 +7,13 @@ from django.conf import settings
 from django.db import models
 
 from apps.catalog.models import Product, Supplier
-from apps.tenants.managers import OrgScopedModel
 
 
 def _generate_reference() -> str:
     return f"PO-{secrets.token_hex(4).upper()}"
 
 
-class PurchaseOrder(OrgScopedModel):
+class PurchaseOrder(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         SUBMITTED = "submitted", "Submitted"
@@ -32,7 +31,7 @@ class PurchaseOrder(OrgScopedModel):
         choices=Status.choices,
         default=Status.DRAFT,
     )
-    reference = models.CharField(max_length=24, default=_generate_reference)
+    reference = models.CharField(max_length=24, unique=True, default=_generate_reference)
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -47,18 +46,12 @@ class PurchaseOrder(OrgScopedModel):
 
     class Meta:
         ordering = ("-created_at",)
-        constraints = [
-            models.UniqueConstraint(
-                fields=("organization", "reference"),
-                name="unique_po_reference_per_org",
-            )
-        ]
 
     def __str__(self) -> str:
         return f"{self.reference} ({self.status})"
 
 
-class PurchaseOrderItem(OrgScopedModel):
+class PurchaseOrderItem(models.Model):
     order = models.ForeignKey(
         PurchaseOrder,
         on_delete=models.CASCADE,

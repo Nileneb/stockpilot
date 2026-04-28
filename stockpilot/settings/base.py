@@ -1,4 +1,5 @@
-"""Base settings shared by all environments."""
+"""Base settings shared by all environments. Schema-isolated multi-tenancy
+via django-tenants — Postgres only."""
 
 import os
 from pathlib import Path
@@ -13,8 +14,11 @@ SECRET_KEY = os.environ.get(
 DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
-INSTALLED_APPS = [
-    # Unfold MUST come before django.contrib.admin
+# --- django-tenants apps split ----------------------------------------------
+
+SHARED_APPS = (
+    "django_tenants",
+    "apps.tenants",
     "unfold",
     "unfold.contrib.filters",
     "unfold.contrib.forms",
@@ -24,30 +28,40 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Local apps
-    "apps.tenants",
+)
+
+TENANT_APPS = (
     "apps.catalog",
     "apps.inventory",
     "apps.vision",
     "apps.forecast",
     "apps.orders",
+)
+
+INSTALLED_APPS = list(SHARED_APPS) + [
+    a for a in TENANT_APPS if a not in SHARED_APPS
 ]
 
-# Email — defaults overridden in dev/prod
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "stockpilot@example.local")
-SERVER_EMAIL = DEFAULT_FROM_EMAIL
+TENANT_MODEL = "tenants.Organization"
+TENANT_DOMAIN_MODEL = "tenants.Domain"
+
+# --- Middleware -------------------------------------------------------------
 
 MIDDLEWARE = [
+    # MUST be first: maps request.get_host() → tenant schema.
+    "django_tenants.middleware.main.TenantMainMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "apps.tenants.middleware.ActiveOrganizationMiddleware",
+    "apps.tenants.middleware.MembershipAccessMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# Public schema serves admin + a tenant chooser.
+PUBLIC_SCHEMA_URLCONF = "stockpilot.urls_public"
 ROOT_URLCONF = "stockpilot.urls"
 
 TEMPLATES = [
@@ -68,12 +82,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "stockpilot.wsgi.application"
 
+# --- Database (Postgres only — schema-based multi-tenancy) ------------------
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django_tenants.postgresql_backend",
+        "NAME": os.environ.get("DB_NAME", "stockpilot"),
+        "USER": os.environ.get("DB_USER", "stockpilot"),
+        "PASSWORD": os.environ.get("DB_PASSWORD", "stockpilot"),
+        "HOST": os.environ.get("DB_HOST", "localhost"),
+        "PORT": os.environ.get("DB_PORT", "5432"),
     }
 }
+
+DATABASE_ROUTERS = ("django_tenants.routers.TenantSyncRouter",)
+
+# --- Auth / passwords -------------------------------------------------------
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -93,7 +117,18 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Vision / inference
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+LOGIN_URL = "/admin/login/"
+LOGIN_REDIRECT_URL = "/admin/"
+
+# --- Email ------------------------------------------------------------------
+
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "stockpilot@example.local")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# --- Vision / inference -----------------------------------------------------
+
 VISION_INFERENCE_BACKEND = os.environ.get(
     "VISION_INFERENCE_BACKEND",
     "apps.vision.inference.UltralyticsBackend",
@@ -101,10 +136,7 @@ VISION_INFERENCE_BACKEND = os.environ.get(
 VISION_YOLO_MODEL = os.environ.get("VISION_YOLO_MODEL", "yolo11n.pt")
 VISION_YOLO_CONFIDENCE = float(os.environ.get("VISION_YOLO_CONFIDENCE", "0.25"))
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-LOGIN_URL = "/admin/login/"
-LOGIN_REDIRECT_URL = "/admin/"
+# --- Unfold -----------------------------------------------------------------
 
 UNFOLD = {
     "SITE_TITLE": "Stockpilot",

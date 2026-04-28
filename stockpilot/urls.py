@@ -1,3 +1,5 @@
+"""Tenant URLs — served on tenant subdomains (e.g. acme.localhost)."""
+
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
