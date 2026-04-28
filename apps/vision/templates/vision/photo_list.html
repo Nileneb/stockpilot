@@ -1,0 +1,25 @@
+{% extends "vision/base.html" %}
+{% block title %}Photos · Stockpilot{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Recent photos</h1>
+{% if photos %}
+<ul class="space-y-2">
+  {% for photo in photos %}
+  <li>
+    <a href="{% url 'vision:photo_detail' photo.id %}"
+       class="block rounded-lg bg-slate-800 hover:bg-slate-700 p-3 flex items-center justify-between">
+      <span>
+        <span class="block text-sm">#{{ photo.id }} · {{ photo.created_at|date:"Y-m-d H:i" }}</span>
+        <span class="text-xs text-slate-400">by {{ photo.uploaded_by|default:"—" }}</span>
+      </span>
+      <span class="text-xs uppercase tracking-wide rounded bg-slate-900 px-2 py-1">
+        {{ photo.get_status_display }}
+      </span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-slate-400">No photos yet. <a href="{% url 'vision:capture' %}" class="text-blue-400">Take one</a>.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "vision/base.html" %}
+{% block title %}Capture · Stockpilot{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-semibold mb-4">Inventory photo</h1>
+<p class="text-sm text-slate-300 mb-6">
+  Snap a photo of a shelf or pallet. Stockpilot will detect items, match them to
+  your products, and update stock counts.
+</p>
+<form method="post" enctype="multipart/form-data" class="space-y-4">
+  {% csrf_token %}
+  <label for="image"
+         class="block w-full rounded-xl bg-blue-600 hover:bg-blue-500 active:bg-blue-700
+                text-white text-center py-4 font-medium cursor-pointer">
+    Take photo
+  </label>
+  <input id="image" name="image" type="file" accept="image/*" capture="environment"
+         class="hidden" onchange="this.form.submit()">
+  <p class="text-xs text-slate-400 text-center">
+    Photo uploads automatically when selected.
+  </p>
+</form>
+{% endblock %}

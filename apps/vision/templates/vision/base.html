@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <title>{% block title %}Stockpilot Capture{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+  <header class="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+    <a href="{% url 'vision:capture' %}" class="font-semibold tracking-tight">Stockpilot</a>
+    <nav class="text-sm text-slate-300 space-x-3">
+      <a href="{% url 'vision:capture' %}" class="hover:text-white">Capture</a>
+      <a href="{% url 'vision:photo_list' %}" class="hover:text-white">Photos</a>
+      <a href="/admin/" class="hover:text-white">Admin</a>
+    </nav>
+  </header>
+  {% if messages %}
+  <ul class="px-4 py-2 space-y-1">
+    {% for message in messages %}
+    <li class="text-sm rounded bg-slate-800 px-3 py-2 border-l-4
+        {% if message.tags == 'error' %}border-rose-500{% elif message.tags == 'warning' %}border-amber-500{% else %}border-emerald-500{% endif %}">
+      {{ message }}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <main class="px-4 py-6 max-w-xl mx-auto">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>
