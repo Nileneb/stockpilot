@@ -24,21 +24,31 @@ python3 -m venv .venv
 # 4. Superuser im Public-Schema
 .venv/bin/python manage.py createsuperuser
 
-# 5. Ersten Tenant + Domain anlegen
+# 5. Apex-Domain → Public-Schema mappen (damit `localhost` die Landing/Signup-Page bedient)
 .venv/bin/python manage.py shell -c "
 from apps.tenants.models import Organization, Domain
-acme = Organization.objects.create(schema_name='acme', name='Acme')
-Domain.objects.create(domain='acme.localhost', tenant=acme, is_primary=True)
+pub, _ = Organization.objects.get_or_create(
+    schema_name='public', defaults={'name': 'Public'}
+)
+Domain.objects.get_or_create(
+    domain='localhost', defaults={'tenant': pub, 'is_primary': True}
+)
 "
 
 # 6. Server starten
 .venv/bin/python manage.py runserver
 ```
 
+Tenants entstehen ab jetzt **per Self-Service-Signup** (Slice 8) — das obige
+Shell-Skript ist nur für die public-Schema-Domain.
+
 Aufrufen:
+- `http://localhost:8000/` → Landing-Page
+- `http://localhost:8000/signup/` → Self-Service-Signup → erzeugt Org + Domain + Owner + redirect auf Subdomain
 - `http://localhost:8000/admin/` → Public-Admin: Organizations, Domains, Memberships, Users
-- `http://acme.localhost:8000/admin/` → Acme-Tenant-Admin: Products, Suppliers, Stock, Photos, Forecasts, Orders
-- `http://acme.localhost:8000/capture/` → Mobile-PWA-Capture für Acme
+- `http://<slug>.localhost:8000/admin/` → Tenant-Admin: Products, Suppliers, Stock, Photos, Forecasts, Orders, Training
+- `http://<slug>.localhost:8000/capture/` → Mobile-PWA-Capture
+- `http://<slug>.localhost:8000/training/` → Custom-YOLO-Training (Slice 7)
 
 ## Tests
 
@@ -110,3 +120,4 @@ Per-Slice-Designs in `docs/superpowers/specs/`:
 5. `2026-04-28-slice-5-pwa-capture-design.md` — Mobile/PWA
 6. `2026-04-28-slice-6-saas-isolation-design.md` — django-tenants Schema-Isolation
 7. `2026-04-29-slice-7-custom-yolo-training-design.md` — Per-Tenant-YOLO-Training
+8. `2026-04-29-slice-8-self-service-signup-design.md` — Self-Service-Signup + Subdomain-Auto-Provisioning

@@ -128,6 +128,12 @@ LOGIN_REDIRECT_URL = "/admin/"
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "stockpilot@example.local")
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
+# --- Signup -----------------------------------------------------------------
+
+# Suffix appended to a tenant's slug to build the primary Domain row.
+# Dev: "localhost" → "acme.localhost". Prod: "stockpilot.app".
+SIGNUP_DOMAIN_SUFFIX = os.environ.get("SIGNUP_DOMAIN_SUFFIX", "localhost")
+
 # --- Vision / inference -----------------------------------------------------
 
 VISION_INFERENCE_BACKEND = os.environ.get(
