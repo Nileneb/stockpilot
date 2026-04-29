@@ -12,6 +12,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.db.utils import IntegrityError
 from django.test import Client, TestCase, override_settings
 
 from apps.tenants.models import Domain, Membership, Organization
@@ -53,6 +54,13 @@ class SlugValidatorTests(TestCase):
             with self.assertRaises(ValidationError):
                 validate_subdomain_slug(reserved)
 
+    def test_rejects_punycode_prefix(self):
+        # xn-- is the IDN punycode prefix; allowing it lets a tenant register
+        # a homograph-phishing subdomain.
+        for bad in ("xn--abc", "xn--example", "xn--80akhbyknj4f"):
+            with self.assertRaises(ValidationError):
+                validate_subdomain_slug(bad)
+
     def test_non_string_rejected(self):
         with self.assertRaises(ValidationError):
             validate_subdomain_slug(None)  # type: ignore[arg-type]
@@ -72,12 +80,19 @@ class ProvisionOrganizationTests(TestCase):
         user, org = services.provision_organization(
             company_name="Acme Inc",
             slug="acme",
-            email="owner@acme.test",
+            email="Owner@Acme.Test",  # mixed case → must normalize to lowercase
             password="SuperSecret123!",
         )
 
         User = get_user_model()
+        # Email normalized to lowercase in both username and email fields.
+        self.assertEqual(user.username, "owner@acme.test")
+        self.assertEqual(user.email, "owner@acme.test")
         self.assertEqual(User.objects.filter(email="owner@acme.test").count(), 1)
+        # Three-tier invariant: signup never grants platform-admin access.
+        # If this regresses, the user's hard requirement is violated.
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
         self.assertEqual(Organization.objects.filter(slug="acme").count(), 1)
         self.assertEqual(
             Domain.objects.filter(domain="acme.localhost").count(), 1
@@ -91,10 +106,20 @@ class ProvisionOrganizationTests(TestCase):
 
     def test_rolls_back_when_domain_creation_fails(self):
         """If Domain.objects.create fails (e.g. uniqueness conflict), no
-        orphan User or Org should remain."""
+        orphan User or Org rows should remain.
+
+        KNOWN GAP: Organization.save() with auto_create_schema=True creates
+        a Postgres schema in a post_save signal that is NOT covered by
+        transaction rollback. The schema named after the failed slug stays
+        in Postgres until manual DROP SCHEMA. Spec line ~105 documents
+        this — slug uniqueness is checked in the form before reaching the
+        service, so this is an edge case in practice.
+        """
         from apps.tenants import services
 
-        # Pre-claim the domain.
+        # Pre-claim the domain (but leave slug "taken" free so the
+        # Organization create succeeds and the failure point is the
+        # subsequent Domain create).
         existing = Organization.objects.create(name="Squatter", slug="squat")
         Domain.objects.create(
             domain="taken.localhost", tenant=existing, is_primary=True
@@ -104,7 +129,7 @@ class ProvisionOrganizationTests(TestCase):
         before_users = User.objects.count()
         before_orgs = Organization.objects.count()
 
-        with self.assertRaises(Exception):
+        with self.assertRaises(IntegrityError):
             services.provision_organization(
                 company_name="Conflicting",
                 slug="taken",  # will collide on Domain.objects.create
@@ -112,7 +137,7 @@ class ProvisionOrganizationTests(TestCase):
                 password="SuperSecret123!",
             )
 
-        # No orphan User or Organization beyond the pre-existing one.
+        # No orphan User or Organization rows beyond the pre-existing ones.
         self.assertEqual(User.objects.count(), before_users)
         self.assertEqual(Organization.objects.count(), before_orgs)
 
@@ -206,7 +231,9 @@ class SignupViewTests(TestCase):
             },
         )
         self.assertEqual(resp.status_code, 200)
-        # Form should reject (django.contrib.auth.password_validation.CommonPasswordValidator)
+        # Form rejects via CommonPasswordValidator + the error must surface
+        # to the user, not just be silently swallowed.
+        self.assertIn("password", resp.context["form"].errors)
         self.assertFalse(Organization.objects.filter(slug="weak").exists())
 
     def test_signup_rate_limit(self):

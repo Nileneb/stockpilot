@@ -47,8 +47,9 @@ Anonymer Besucher auf https://stockpilot.app/
 ## Validation rules
 
 **Slug (Subdomain):**
-- Regex: `^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$` (3–30 chars, kein Leading/Trailing Dash, lowercase only)
-- Reserved-Names: `www`, `admin`, `api`, `app`, `auth`, `mail`, `support`, `help`, `status`, `docs`, `blog`, `signup`, `login`, `dashboard`, `static`, `media`, `assets`, `stockpilot`, `public`, `localhost` — case-insensitive Match
+- Regex: `^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$` (3–30 chars, kein Leading/Trailing Dash, lowercase only)
+- Reserved-Names: `www`, `admin`, `api`, `app`, `auth`, `mail`, `support`, `help`, `status`, `docs`, `blog`, `signup`, `login`, `logout`, `dashboard`, `static`, `media`, `assets`, `stockpilot`, `public`, `localhost`, `test`, `staging`, `prod`, `production` — case-insensitive Match
+- Reject `xn--`-Prefix (IDN/punycode — würde Homograph-Phishing-Subdomains erlauben)
 - Uniqueness: `Organization.objects.filter(slug=…).exists()` muss False sein
 
 **Email:** standard Django EmailField + `User.objects.filter(email=…).exists()` ⇒ Konflikt

@@ -37,21 +37,22 @@ def provision_organization(
     slug: str,
     email: str,
     password: str,
-    user_full_name: str = "",
 ):
     """Create User + Organization + Domain + Membership in one transaction.
 
     Returns (user, organization). Caller is expected to log the user in.
+
+    Email is normalized to lowercase so the `username` (= email) and the
+    `email` field stay consistent with the form's case-insensitive
+    uniqueness check.
     """
     User = get_user_model()
 
-    # Username = email (User model uses unique=True on username; AbstractUser
-    # has both username and email so we use email as username for SaaS UX).
+    email = email.lower().strip()
     user = User.objects.create_user(
         username=email,
         email=email,
         password=password,
-        first_name=user_full_name,
     )
 
     org = Organization.objects.create(name=company_name, slug=slug)
