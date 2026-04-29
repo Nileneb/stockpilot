@@ -36,6 +36,7 @@ TENANT_APPS = (
     "apps.vision",
     "apps.forecast",
     "apps.orders",
+    "apps.training",
 )
 
 INSTALLED_APPS = list(SHARED_APPS) + [
@@ -135,6 +136,35 @@ VISION_INFERENCE_BACKEND = os.environ.get(
 )
 VISION_YOLO_MODEL = os.environ.get("VISION_YOLO_MODEL", "yolo11n.pt")
 VISION_YOLO_CONFIDENCE = float(os.environ.get("VISION_YOLO_CONFIDENCE", "0.25"))
+
+# Auto-suggestion (training annotation): bigger YOLO + SAM 2 for unknown
+# objects. These are heavy and only loaded by the Celery worker.
+TRAINING_SUGGEST_YOLO_MODEL = os.environ.get(
+    "TRAINING_SUGGEST_YOLO_MODEL", "yolo11x.pt"
+)
+TRAINING_SUGGEST_SAM_MODEL = os.environ.get(
+    "TRAINING_SUGGEST_SAM_MODEL", "sam2_t.pt"
+)
+TRAINING_SUGGEST_USE_SAM = (
+    os.environ.get("TRAINING_SUGGEST_USE_SAM", "true").lower() == "true"
+)
+
+# --- Celery -----------------------------------------------------------------
+
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = os.environ.get(
+    "CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1"
+)
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TIMEZONE = "Europe/Berlin"
+CELERY_TASK_TRACK_STARTED = True
+# In tests we run tasks eagerly; production / dev uses a worker.
+CELERY_TASK_ALWAYS_EAGER = (
+    os.environ.get("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
+)
+CELERY_TASK_EAGER_PROPAGATES = True
 
 # --- Unfold -----------------------------------------------------------------
 

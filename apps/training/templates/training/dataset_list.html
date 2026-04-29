@@ -1,0 +1,38 @@
+{% extends "training/base.html" %}
+{% block page_title %}Training datasets{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-xl font-semibold">Training datasets</h1>
+  <a href="{% url 'training:dataset_new' %}"
+     class="rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 text-sm">
+    New dataset
+  </a>
+</div>
+
+{% if datasets %}
+<ul class="space-y-2">
+  {% for d in datasets %}
+  <li>
+    <a href="{% url 'training:dataset_detail' d.id %}"
+       class="block rounded-lg bg-slate-800 hover:bg-slate-700 p-3 flex items-center justify-between">
+      <span>
+        <span class="block text-sm">{{ d.name }}</span>
+        <span class="text-xs text-slate-400">
+          {{ d.images.count }} image{{ d.images.count|pluralize }} · {{ d.created_at|date:"Y-m-d" }}
+        </span>
+      </span>
+      <span class="text-xs uppercase tracking-wide rounded bg-slate-900 px-2 py-1
+        {% if d.status == 'frozen' %}text-amber-400{% else %}text-emerald-400{% endif %}">
+        {{ d.get_status_display }}
+      </span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="text-slate-400 text-sm">
+  No datasets yet. <a href="{% url 'training:dataset_new' %}" class="text-blue-400">Create one</a>
+  to get started.
+</div>
+{% endif %}
+{% endblock %}

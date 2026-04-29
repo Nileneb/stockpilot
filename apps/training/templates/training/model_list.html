@@ -1,0 +1,38 @@
+{% extends "training/base.html" %}
+{% block page_title %}Trained models{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">Trained models</h1>
+
+{% if models %}
+<ul class="space-y-2">
+  {% for m in models %}
+  <li class="rounded-lg bg-slate-800 p-3 flex items-center justify-between">
+    <div>
+      <div class="text-sm">{{ m.name }} <span class="text-slate-400">v{{ m.version }}</span></div>
+      <div class="text-xs text-slate-400">
+        {{ m.created_at|date:"Y-m-d H:i" }}
+        {% if m.metrics.metrics_mAP50 %}· mAP50 {{ m.metrics|stringformat:'s'|truncatewords:8 }}{% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if m.is_active %}
+      <span class="text-xs uppercase tracking-wide rounded bg-emerald-900 text-emerald-300 px-2 py-1">Active</span>
+      {% else %}
+      <form method="post" action="{% url 'training:model_activate' m.id %}">
+        {% csrf_token %}
+        <button class="text-xs rounded bg-blue-600 hover:bg-blue-500 text-white px-3 py-1">
+          Activate
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-sm text-slate-400">
+  No custom models yet — train one from a
+  <a href="{% url 'training:dataset_list' %}" class="text-blue-400">dataset</a>.
+</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "training/base.html" %}
+{% block page_title %}New training dataset{% endblock %}
+{% block content %}
+<h1 class="text-xl font-semibold mb-4">New training dataset</h1>
+
+<form method="post" class="space-y-4 mb-8">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="create">
+  <label class="block">
+    <span class="text-sm text-slate-300">Name</span>
+    <input name="name" required
+           class="block w-full mt-1 rounded bg-slate-800 border border-slate-700 px-3 py-2">
+  </label>
+  <label class="block">
+    <span class="text-sm text-slate-300">Description (optional)</span>
+    <textarea name="description" rows="2"
+              class="block w-full mt-1 rounded bg-slate-800 border border-slate-700 px-3 py-2"></textarea>
+  </label>
+  <button class="rounded-lg bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 text-sm">
+    Create empty dataset
+  </button>
+</form>
+
+<div class="border-t border-slate-700 pt-6">
+  <h2 class="text-sm uppercase tracking-wide text-slate-400 mb-2">Power-user: import a YOLO ZIP</h2>
+  <form method="post" enctype="multipart/form-data" class="space-y-3">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="import_zip">
+    <input name="name" required placeholder="Dataset name"
+           class="block w-full rounded bg-slate-800 border border-slate-700 px-3 py-2 text-sm">
+    <input name="zip_file" type="file" accept=".zip" required
+           class="block text-sm text-slate-300">
+    <button class="rounded-lg bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 text-sm">
+      Import ZIP
+    </button>
+    <p class="text-xs text-slate-400">
+      Expected layout: <code>images/</code>, <code>labels/</code>,
+      optional <code>data.yaml</code> with <code>names</code>.
+    </p>
+  </form>
+</div>
+{% endblock %}

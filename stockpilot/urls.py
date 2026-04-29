@@ -10,6 +10,7 @@ from apps.vision import views as vision_views
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("capture/", include("apps.vision.urls")),
+    path("training/", include("apps.training.urls")),
     path("manifest.webmanifest", vision_views.manifest, name="manifest"),
     path("sw.js", vision_views.service_worker, name="service_worker"),
     path("accounts/", include("django.contrib.auth.urls")),

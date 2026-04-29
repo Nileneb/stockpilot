@@ -1,0 +1,77 @@
+{% extends "training/base.html" %}
+{% block page_title %}{{ dataset.name }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-xl font-semibold">{{ dataset.name }}</h1>
+    <p class="text-xs text-slate-400">
+      {{ dataset.images.count }} image{{ dataset.images.count|pluralize }} ·
+      <span class="{% if dataset.status == 'frozen' %}text-amber-400{% else %}text-emerald-400{% endif %}">
+        {{ dataset.get_status_display }}
+      </span>
+    </p>
+  </div>
+  <a href="{% url 'training:dataset_list' %}" class="text-xs text-slate-400 hover:text-white">← all datasets</a>
+</div>
+
+{% if dataset.is_editable %}
+<form method="post" enctype="multipart/form-data" class="mb-4">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="add_image">
+  <label class="rounded-lg bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white inline-block px-4 py-2 text-sm cursor-pointer">
+    Add image
+    <input type="file" name="image" accept="image/*" class="hidden" onchange="this.form.submit()">
+  </label>
+</form>
+{% endif %}
+
+{% if dataset.images.exists %}
+<div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+  {% for img in dataset.images.all %}
+  <a href="{% url 'training:image_annotate' img.id %}"
+     class="block rounded-lg overflow-hidden bg-slate-800 hover:ring-2 hover:ring-blue-500 relative">
+    <img src="{{ img.image.url }}" alt="" class="w-full aspect-square object-cover">
+    <span class="absolute top-1 right-1 text-xs rounded px-1.5 py-0.5 bg-slate-900/80
+      {% if img.annotations %}text-emerald-400{% else %}text-slate-400{% endif %}">
+      {{ img.annotations|length }} box{{ img.annotations|length|pluralize:"es" }}
+    </span>
+    <span class="absolute bottom-1 left-1 text-xs rounded px-1.5 py-0.5 bg-slate-900/80
+      {% if img.suggestions_status == 'done' %}text-blue-400
+      {% elif img.suggestions_status == 'failed' %}text-rose-400
+      {% else %}text-slate-400 animate-pulse{% endif %}">
+      AI: {{ img.get_suggestions_status_display }}
+    </span>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-sm text-slate-400 mb-6">No images yet. Add one above.</p>
+{% endif %}
+
+{% if dataset.is_editable %}
+<form method="post" class="border-t border-slate-700 pt-4">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="start_training">
+  <h2 class="text-sm uppercase tracking-wide text-slate-400 mb-2">Train</h2>
+  <div class="grid grid-cols-3 gap-2 mb-3 text-sm">
+    <label>Epochs <input name="epochs" type="number" value="50" min="1" max="500"
+      class="block w-full rounded bg-slate-800 border border-slate-700 px-2 py-1"></label>
+    <label>Batch <input name="batch_size" type="number" value="4" min="1" max="32"
+      class="block w-full rounded bg-slate-800 border border-slate-700 px-2 py-1"></label>
+    <label>Image size <input name="image_size" type="number" value="640" min="320" step="32"
+      class="block w-full rounded bg-slate-800 border border-slate-700 px-2 py-1"></label>
+  </div>
+  <button class="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 text-sm">
+    Freeze + start training
+  </button>
+  <p class="text-xs text-slate-400 mt-2">
+    Freezes the dataset (no further edits) and queues a Celery training job.
+  </p>
+</form>
+{% else %}
+<p class="text-xs text-slate-400 border-t border-slate-700 pt-4">
+  Dataset frozen on {{ dataset.frozen_at|date:"Y-m-d H:i" }}. See
+  <a href="{% url 'training:job_list' %}" class="text-blue-400">training jobs</a>.
+</p>
+{% endif %}
+{% endblock %}
