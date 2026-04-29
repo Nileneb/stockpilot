@@ -29,6 +29,15 @@ logger = logging.getLogger(__name__)
 _VALID_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
+def _under_folder(path: str, folder: str) -> bool:
+    """True if `folder` appears as a path component anywhere in `path`.
+
+    Matches both `images/x.png` and `dataset/images/x.png`, but not
+    `subimages/x.png`.
+    """
+    return folder in Path(path).parts[:-1]
+
+
 @transaction.atomic
 def create_dataset_from_zip(
     zip_bytes: bytes, *, name: str, description: str = "", created_by=None
@@ -45,7 +54,8 @@ def create_dataset_from_zip(
         class_names = _read_class_names(members, zf)
         image_names = sorted(
             n for n in members
-            if "/images/" in n and Path(n).suffix.lower() in _VALID_IMAGE_SUFFIXES
+            if _under_folder(n, "images")
+            and Path(n).suffix.lower() in _VALID_IMAGE_SUFFIXES
         )
         if not image_names:
             raise ValueError("ZIP contains no images under an 'images/' folder")
@@ -61,7 +71,7 @@ def create_dataset_from_zip(
             label_name = next(
                 (
                     n for n in members
-                    if "/labels/" in n and Path(n).stem == stem
+                    if _under_folder(n, "labels") and Path(n).stem == stem
                     and Path(n).suffix == ".txt"
                 ),
                 None,

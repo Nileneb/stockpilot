@@ -277,7 +277,10 @@ class InferenceUsesActiveModelTests(TenantTestCase):
 
         backend = UltralyticsBackend()
         path = backend._resolve_path()
-        self.assertTrue(path.endswith("test_weights.pt"))
+        # Django's storage may suffix the filename if a previous test left
+        # a file behind ("test_weights_abc123.pt"); just assert the stem.
+        self.assertIn("test_weights", path)
+        self.assertTrue(path.endswith(".pt"))
 
     @override_settings(VISION_YOLO_MODEL="default.pt")
     def test_resolve_path_falls_back_when_no_active_model(self):
