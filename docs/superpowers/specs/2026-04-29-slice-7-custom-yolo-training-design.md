@@ -255,7 +255,6 @@ The Celery worker auto-uses GPU if available (Ultralytics auto-detects `cuda`).
 
 ## Out of scope
 
-- In-browser annotation UI (use LabelImg / CVAT / Label Studio externally)
 - Hyperparameter sweeps / Optuna integration
 - Active learning loops (re-train on misclassified production photos)
 - Model A/B testing or shadow inference

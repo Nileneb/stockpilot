@@ -207,35 +207,39 @@ def _extract_metrics(results) -> dict:
 def _register_model_from_weights(
     *, job: TrainingJob, weights_path: Path, metrics: dict, class_names: list[str]
 ) -> YoloModel:
-    """Copy weights into MEDIA / save a YoloModel row pointing at it."""
-    from django.conf import settings as dj_settings
+    """Copy weights into MEDIA / save a YoloModel row pointing at it.
 
-    schema = job.dataset._meta.app_label  # any schema-aware connection attr would do
-    # Actual schema directory comes from connection.schema_name at this point.
-    from django.db import connection
+    Version bump runs under `select_for_update` so two concurrent training
+    jobs in the same tenant can't both read the same MAX(version) and
+    create duplicate rows.
+    """
+    from django.conf import settings as dj_settings
+    from django.db import connection, transaction
+
     schema = connection.schema_name
 
-    # Bump version per tenant
-    next_version = (
-        YoloModel.objects.aggregate_count if False else
-        (YoloModel.objects.order_by("-version").values_list("version", flat=True).first() or 0) + 1
-    )
+    with transaction.atomic():
+        latest = (
+            YoloModel.objects.select_for_update()
+            .order_by("-version")
+            .values_list("version", flat=True)
+            .first()
+        )
+        next_version = (latest or 0) + 1
 
-    target_dir = Path(dj_settings.MEDIA_ROOT) / "models" / schema
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_filename = f"job{job.pk}_v{next_version}.pt"
-    target_path = target_dir / target_filename
-    shutil.copy2(weights_path, target_path)
+        target_dir = Path(dj_settings.MEDIA_ROOT) / "models" / schema
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_filename = f"job{job.pk}_v{next_version}.pt"
+        target_path = target_dir / target_filename
+        shutil.copy2(weights_path, target_path)
 
-    # Build the relative path django expects in FileField.name
-    relative = f"models/{schema}/{target_filename}"
-
-    return YoloModel.objects.create(
-        name=f"{job.dataset.name} v{next_version}",
-        version=next_version,
-        file=relative,
-        source_job=job,
-        is_active=False,
-        metrics=metrics,
-        class_names=class_names,
-    )
+        relative = f"models/{schema}/{target_filename}"
+        return YoloModel.objects.create(
+            name=f"{job.dataset.name} v{next_version}",
+            version=next_version,
+            file=relative,
+            source_job=job,
+            is_active=False,
+            metrics=metrics,
+            class_names=class_names,
+        )

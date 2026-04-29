@@ -170,6 +170,21 @@ class TrainingServicesTests(TenantTestCase):
                 [{"label": "x", "x_center": 0.5, "y_center": 0.5, "width": 0, "height": 0.2}],
             )
 
+    def test_save_annotations_rejects_missing_key(self):
+        ds = Dataset.objects.create(name="A")
+        ti = self._make_image(ds)
+        with self.assertRaisesRegex(ValueError, "Missing required field: x_center"):
+            services.save_annotations(ti, [{"label": "x"}])
+
+    def test_save_annotations_rejects_non_numeric(self):
+        ds = Dataset.objects.create(name="A")
+        ti = self._make_image(ds)
+        with self.assertRaisesRegex(ValueError, "must be numeric"):
+            services.save_annotations(
+                ti,
+                [{"label": "x", "x_center": "oops", "y_center": 0.5, "width": 0.1, "height": 0.1}],
+            )
+
     # --- Freeze ------------------------------------------------------------
 
     def test_freeze_dataset_is_idempotent(self):

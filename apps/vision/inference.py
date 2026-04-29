@@ -14,12 +14,15 @@ path). Default in `base.py` is the Ultralytics backend.
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Iterable, Protocol
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -77,16 +80,24 @@ class UltralyticsBackend:
         self._cache: dict[str, object] = {}
 
     def _resolve_path(self) -> str:
-        # Tenant-aware lookup. Wrapped in try/except so the public schema
-        # (no `training` table) and tests without DB still work.
+        # Tenant-aware lookup. The `training` table doesn't exist in the
+        # public schema, so we narrow the except to ProgrammingError (table
+        # missing) + ImproperlyConfigured (test envs without DB). A real DB
+        # outage would still surface — silently degrading every tenant to
+        # the fallback model is worse than failing loud.
+        from django.core.exceptions import ImproperlyConfigured
+        from django.db.utils import ProgrammingError
+
         try:
             from apps.training.models import YoloModel
 
             active = YoloModel.objects.filter(is_active=True).first()
             if active is not None and active.file:
                 return active.file.path
-        except Exception:  # noqa: BLE001
-            pass
+        except (ProgrammingError, ImproperlyConfigured) as exc:
+            logger.debug("active YoloModel lookup unavailable: %s", exc)
+        except ImportError as exc:
+            logger.debug("training app unavailable: %s", exc)
         return getattr(settings, "VISION_YOLO_MODEL", "yolo11n.pt")
 
     def _load(self):

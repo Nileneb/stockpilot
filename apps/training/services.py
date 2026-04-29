@@ -137,6 +137,7 @@ def _parse_yolo_label_file(text: str, class_names: list[str] | None) -> list[dic
 # --- Image lifecycle -------------------------------------------------------
 
 
+@transaction.atomic
 def add_image(
     dataset: Dataset,
     *,
@@ -153,10 +154,14 @@ def add_image(
         uploaded_by=uploaded_by,
     )
 
-    # Queue async suggestion generation.
+    # Defer until the row is actually visible to other connections;
+    # otherwise the worker can race the commit and hit DoesNotExist.
     from .tasks import generate_suggestions
 
-    generate_suggestions.delay(ti.pk, connection.schema_name)
+    schema = connection.schema_name
+    transaction.on_commit(
+        lambda: generate_suggestions.delay(ti.pk, schema)
+    )
     return ti
 
 
@@ -176,7 +181,13 @@ def _validate_annotation(ann: dict) -> dict:
         raise ValueError("Each annotation must carry a non-empty label")
     out = {"label": label}
     for key in ("x_center", "y_center", "width", "height"):
-        val = float(ann[key])
+        raw = ann.get(key)
+        if raw is None:
+            raise ValueError(f"Missing required field: {key}")
+        try:
+            val = float(raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key} must be numeric; got {raw!r}") from None
         if not 0.0 <= val <= 1.0:
             raise ValueError(f"{key} must be in [0, 1]; got {val}")
         out[key] = val
@@ -201,6 +212,7 @@ def freeze_dataset(dataset: Dataset) -> Dataset:
 # --- Training job ----------------------------------------------------------
 
 
+@transaction.atomic
 def start_training_job(
     dataset: Dataset,
     *,
@@ -210,7 +222,12 @@ def start_training_job(
     base_model: str = "yolo11n.pt",
     created_by=None,
 ) -> TrainingJob:
-    """Freeze the dataset (if needed) and queue a training run."""
+    """Freeze the dataset (if needed) and queue a training run.
+
+    Wrapped in `transaction.atomic` + `on_commit` so a broker outage
+    between job-create and dispatch doesn't leave the dataset frozen with
+    a phantom pending job.
+    """
     if not dataset.images.exclude(annotations=[]).exists():
         raise ValueError("Dataset has no annotated images — train would be empty")
     freeze_dataset(dataset)
@@ -226,7 +243,8 @@ def start_training_job(
 
     from .tasks import train_yolo
 
-    train_yolo.delay(job.pk, connection.schema_name)
+    schema = connection.schema_name
+    transaction.on_commit(lambda: train_yolo.delay(job.pk, schema))
     return job
 
 

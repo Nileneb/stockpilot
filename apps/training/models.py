@@ -190,7 +190,15 @@ class YoloModel(models.Model):
 
     @transaction.atomic
     def activate(self) -> None:
-        """Set this model active, deactivate all others atomically."""
+        """Set this model active, deactivate all others atomically.
+
+        `select_for_update` over the currently-active row(s) serializes
+        concurrent activate() calls so they don't both clear+set and
+        crash on the partial-unique-active constraint.
+        """
+        list(
+            YoloModel.objects.select_for_update().filter(is_active=True)
+        )
         YoloModel.objects.filter(is_active=True).exclude(pk=self.pk).update(
             is_active=False
         )
